@@ -45,8 +45,6 @@ def normalize_importer_names(df, similarity_threshold=90):
             unique_names.append(name)
             name_mapping[name] = name
 
-    # df['Importer'] = df['Normalized_Importer'].map(name_mapping)
-
     return df
 
 if uploaded_files:
