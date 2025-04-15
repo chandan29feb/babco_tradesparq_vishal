@@ -73,6 +73,11 @@ if uploaded_files:
         .apply(lambda x: list(x.dropna().unique()))
         .reset_index(name="Products List")
     )
+    products_per_container.insert(
+    loc=1,
+    column='Total Products in Container',
+    value=products_per_container['Products List'].apply(len)
+    )
 
     weight_per_product = (
         df.groupby(['Container Name', 'Description'])['Weight (kgs)']
@@ -86,7 +91,7 @@ if uploaded_files:
 
     revenue_per_importer = (
         df.groupby('Importer')['Value (USD)']
-        .sum().reset_index(name='Total Revenue (USD)')
+        .sum().reset_index(name='Total Value(USD) per Importer')
     )
 
     main_output = io.BytesIO()
@@ -102,6 +107,8 @@ if uploaded_files:
             worksheet.freeze_panes(1, 0)
 
             header_format = writer.book.add_format({'bold': True})
+            standard_number_format = writer.book.add_format({'num_format': '#,##,##0'})
+            
             for col_num, value in enumerate(df_sheet.columns.values):
                 worksheet.write(0, col_num, value, header_format)
 
@@ -109,10 +116,15 @@ if uploaded_files:
                     df_sheet[value].astype(str).map(len).max() if not df_sheet[value].isnull().all() else 10,
                     len(value)
                 ) + 5
-
+                
+                col_lower = value.lower()
+                
                 if pd.api.types.is_datetime64_any_dtype(df_sheet[value]):
                     date_format = writer.book.add_format({'num_format': 'yyyy-mm-dd'})
                     worksheet.set_column(col_num, col_num, max_len + 5, date_format)
+                elif any(keyword in col_lower for keyword in ['cost', 'revenue', 'weight', 'value']) and \
+                    pd.api.types.is_numeric_dtype(df_sheet[value]):
+                    worksheet.set_column(col_num, col_num, max_len, standard_number_format)
                 else:
                     worksheet.set_column(col_num, col_num, max_len)
 
@@ -120,7 +132,7 @@ if uploaded_files:
         write_sheet(products_per_container, "Products per Container")
         write_sheet(weight_per_product, "Weight per Product")
         write_sheet(shipment_cost_per_container, "Shipment Cost")
-        write_sheet(revenue_per_importer, "Revenue per Importer")
+        write_sheet(revenue_per_importer, "Total Value per Importer")
         
     st.success("Analysis complete. Download your report below:")
     st.download_button(
