@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import io
+from rapidfuzz import fuzz, process
 
 st.set_page_config(page_title="Container Analysis Tool", layout="wide")
 st.title("Container Analysis Tool for Tradesparq Exports")
@@ -23,6 +24,30 @@ ignore_columns_in_cleaned_sheet = [
     'Loading Place','Unloading Place','Customs','incoterms','Carrier','VOCC',
     'Vessel Name','Voyage','House Bill Number','Customs Declaration Number'
 ]
+
+def normalize_importer_names(df, similarity_threshold=90):
+    df['Normalized_Importer'] = df['Importer'].astype(str).str.upper().str.replace(r'[^A-Z0-9 ]', '', regex=True).str.strip()
+
+    unique_names = []
+    name_mapping = {}
+
+    for name in df['Normalized_Importer'].unique():
+        if not unique_names:
+            unique_names.append(name)
+            name_mapping[name] = name
+            continue
+
+        match, score, _ = process.extractOne(name, unique_names, scorer=fuzz.token_sort_ratio)
+
+        if score >= similarity_threshold:
+            name_mapping[name] = match
+        else:
+            unique_names.append(name)
+            name_mapping[name] = name
+
+    # df['Importer'] = df['Normalized_Importer'].map(name_mapping)
+
+    return df
 
 if uploaded_files:
     all_data = []
@@ -52,7 +77,8 @@ if uploaded_files:
 
     df = pd.concat(all_data, ignore_index=True)
     df['Importer'] = df['Importer'].astype(str).str.strip().str.upper()
-
+    df = normalize_importer_names(df)
+    
     df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
     
     df['Date_str'] = df['Date'].dt.strftime('%B%d')
@@ -100,6 +126,18 @@ if uploaded_files:
         def write_sheet(df_sheet, sheet_name, drop_columns=None):
             if drop_columns:
                 df_sheet = df_sheet.drop(columns=[col for col in drop_columns if col in df_sheet.columns])
+                
+            sort_col = next(
+            (
+                col for col in df_sheet.columns 
+                if any(k in col.lower() for k in ['cost', 'revenue', 'weight', 'value']) 
+                and pd.api.types.is_numeric_dtype(df_sheet[col])
+            ),
+            None
+            )
+            
+            if sort_col:
+                df_sheet = df_sheet.sort_values(by=sort_col, ascending=False)
 
             df_sheet.to_excel(writer, index=False, sheet_name=sheet_name)
             worksheet = writer.sheets[sheet_name]
